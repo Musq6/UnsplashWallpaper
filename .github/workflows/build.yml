@@ -3,6 +3,8 @@ name: Build Python Qt App with PyInstaller
 on:
   workflow_dispatch:
   push:
+    tags:
+      - 'v*'
     branches: [main]
 
 jobs:
