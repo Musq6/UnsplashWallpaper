@@ -1,4 +1,4 @@
-name: Build Python Qt App with PyInstaller
+name: Build 
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pyinstaller PyQt5 pillow  
+          pip install --no-cache-dir pyinstaller PyQt5 pillow  
 
       - name: Run PyInstaller via build.py
         run: |
