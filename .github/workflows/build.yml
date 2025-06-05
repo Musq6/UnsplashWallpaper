@@ -27,8 +27,8 @@ jobs:
 
       - name: Rename Windows output
         run: |
-          mv dist/UnsplashWallpaper.exe dist/UnsplashWallpaper-windows.exe
-          zip -j dist/UnsplashWallpaper-windows.zip dist/UnsplashWallpaper-windows.exe icon.ico
+          Move-Item -Path "dist/UnsplashWallpaper.exe" -Destination "dist/UnsplashWallpaper-windows.exe"
+          Compress-Archive -Path "dist/UnsplashWallpaper-windows.exe", "icon.ico" -DestinationPath "dist/UnsplashWallpaper-windows.zip" -Force
 
       - name: Check dist directory
         run: |
