@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install --no-cache-dir pyinstaller PyQt5 pillow  
+          pip install --no-cache-dir pyinstaller PyQt5 pillow requests
 
       - name: Run PyInstaller via build.py
         run: |
