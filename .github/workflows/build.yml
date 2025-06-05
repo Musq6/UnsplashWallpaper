@@ -1,9 +1,10 @@
 name: Build Python Qt App with PyInstaller
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
-  workflow_dispatch:
+
 
 jobs:
   build:
