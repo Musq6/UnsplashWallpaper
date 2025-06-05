@@ -20,11 +20,11 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pyinstaller PyQt5 pillow  # 添加Pillow用于生成图标[你的脚本]
+          pip install pyinstaller PyQt5 pillow  
 
       - name: Run PyInstaller via build.py
         run: |
-          python build.py  # 直接执行你的编译脚本[你的脚本]
+          python build.py  
 
       - name: Rename Windows output
         run: |
