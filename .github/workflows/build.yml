@@ -7,11 +7,7 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        os: [windows-latest]
-    runs-on: ${{ matrix.os }}
-
+      runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -24,29 +20,23 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pyinstaller PyQt5 pillow  # 添加Pillow用于生成图标[你的脚本]
-          pip install -r requirements.txt
 
       - name: Run PyInstaller via build.py
         run: |
           python build.py  # 直接执行你的编译脚本[你的脚本]
 
       - name: Rename Windows output
-        if: matrix.os == 'windows-latest'
         run: |
           mv dist/UnsplashWallpaper.exe dist/UnsplashWallpaper-windows.exe
           zip -j dist/UnsplashWallpaper-windows.zip dist/UnsplashWallpaper-windows.exe icon.ico  # 打包exe和图标[你的脚本]
 
-      - name: Rename Linux/macOS output
-        if: matrix.os != 'windows-latest'
+      
+      - name: check dir
         run: |
-          chmod +x dist/UnsplashWallpaper
-          mv dist/UnsplashWallpaper dist/UnsplashWallpaper-${{ matrix.os }}
-          zip -j dist/UnsplashWallpaper-${{ matrix.os }}.zip dist/UnsplashWallpaper-${{ matrix.os }} icon.ico  # 打包二进制和图标[你的脚本]
+          dir dist
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: UnsplashWallpaper-${{ matrix.os }}
-          path: |
-            dist/UnsplashWallpaper-*.zip
-            dist/icon.ico
+          files: dist/UnsplashWallpaper.exe
