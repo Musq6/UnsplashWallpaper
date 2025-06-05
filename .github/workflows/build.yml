@@ -3,12 +3,11 @@ name: Build Python Qt App with PyInstaller
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
-
+    branches: [main]
 
 jobs:
   build:
-      runs-on: windows-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -29,15 +28,14 @@ jobs:
       - name: Rename Windows output
         run: |
           mv dist/UnsplashWallpaper.exe dist/UnsplashWallpaper-windows.exe
-          zip -j dist/UnsplashWallpaper-windows.zip dist/UnsplashWallpaper-windows.exe icon.ico  # 打包exe和图标[你的脚本]
+          zip -j dist/UnsplashWallpaper-windows.zip dist/UnsplashWallpaper-windows.exe icon.ico
 
-      
-      - name: check dir
+      - name: Check dist directory
         run: |
           dir dist
 
-      - name: release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/UnsplashWallpaper.exe
+          files: dist/UnsplashWallpaper-windows.zip
