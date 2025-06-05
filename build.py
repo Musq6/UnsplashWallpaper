@@ -27,4 +27,4 @@ PyInstaller.__main__.run([
     '--clean',                      # 清理临时文件
 ])
 
-print("打包完成！可执行文件位于 dist 目录中。")
+print("Done,check dir dist")
