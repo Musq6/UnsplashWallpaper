@@ -30,8 +30,7 @@ jobs:
       - name: Rename Windows output
         run: |
           Move-Item -Path "dist/UnsplashWallpaper.exe" -Destination "dist/UnsplashWallpaper-windows.exe"
-          Compress-Archive -Path "dist/UnsplashWallpaper-windows.exe", "icon.ico" -DestinationPath "dist/UnsplashWallpaper-windows.zip" -Force
-
+          
       - name: Check dist directory
         run: |
           dir dist
