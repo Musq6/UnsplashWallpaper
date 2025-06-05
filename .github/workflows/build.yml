@@ -13,6 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Debug context variables
+        run: |
+          echo "GITHUB_REF: ${{ github.ref }}"
+          echo "GITHUB_EVENT_NAME: ${{ github.event_name }}"
+          echo "GITHUB_REF_TYPE: ${{ github.ref_type }}"
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
