@@ -21,7 +21,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(600, 400)
         
         # 设置窗口图标
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         
@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
         self.tray_icon = QSystemTrayIcon(self)
         
         # 使用自定义图标替代系统图标
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
         
         # 如果图标文件存在，则使用自定义图标
         if os.path.exists(icon_path):

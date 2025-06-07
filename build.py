@@ -23,7 +23,6 @@ PyInstaller.__main__.run([
     '--onefile',                    # 打包为单个文件
     f'--icon={icon_path}',          # 应用图标
     '--noconsole',                  # 不显示控制台窗口
-    '--add-data=icon.ico;.',        # 添加图标文件到打包中
     '--clean',                      # 清理临时文件
 ])
 
