@@ -35,9 +35,16 @@ jobs:
         run: |
           dir dist
 
+      # 添加这个步骤来上传 artifact（无论是否有标签都会执行）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnsplashWallpaper-windows
+          path: dist/UnsplashWallpaper-windows.exe
+
+      # 只有在推送标签时才创建 GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: dist/UnsplashWallpaper-windows.exe
-
