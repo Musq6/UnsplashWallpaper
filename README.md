@@ -16,3 +16,6 @@
 
 - 使用UnsplashAPI请求图片，需要Accesskey填入程序。免费申请使用，但限制50次请求/小时 申请地址：https://unsplash.com/developers
 - 会创建一个json文件本地保存设置信息
+
+##👍
+<a href="https://www.flaticon.com/free-icons/picture" title="picture icons">Picture icons created by -Artist - Flaticon</a>
