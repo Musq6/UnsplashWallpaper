@@ -14,7 +14,8 @@
 
 ## 须知
 
-- 使用UnsplashAPI请求图片，需要Accesskey填入程序。免费申请使用，但限制50次请求/小时 申请地址：https://unsplash.com/developers
+- 使用UnsplashAPI请求信息，需要Accesskey填入程序。免费申请使用，但限制50次请求/小时 申请地址：https://unsplash.com/developers
+- 请求数据都是通过API
 - 会创建一个json文件本地保存设置信息
 
 ## 👍
