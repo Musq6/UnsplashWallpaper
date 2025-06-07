@@ -5,7 +5,7 @@ import PyInstaller.__main__
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # 图标文件路径
-icon_path = os.path.join(current_dir, "icon.ico")
+icon_path = os.path.join(current_dir, "icon.png")
 
 # 如果图标文件不存在，则创建一个简单的图标
 if not os.path.exists(icon_path):

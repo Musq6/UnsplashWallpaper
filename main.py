@@ -8,7 +8,7 @@ def main():
     app = QApplication(sys.argv)
     
     # 设置应用程序图标
-    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
     
