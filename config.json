@@ -1,0 +1,45 @@
+{
+    "frequency": "1小时",
+    "save_path": "E:/新图片/Unsplash/暂存",
+    "favorite_path": "E:/新图片/Unsplash",
+    "auto_start": false,
+    "unsplash_access_key": "DMLciXKys3zl7pPm6IKfYWv4I0LI35-XMc3m_IZX43M",
+    "unsplash_secret_key": "",
+    "keywords": "",
+    "quality": "high",
+    "use_collection": true,
+    "selected_collection": "user_likes_palacelsis",
+    "collection_mode": "popular",
+    "last_collection_search": "",
+    "custom_collections": {
+        "Bonjourr Backgrounds (evening)": "3M2rKTckZaQ",
+        "Xavi Lynx 的 Likes": "user_likes_palacelsis"
+    },
+    "cached_collections": {
+        "3M2rKTckZaQ": {
+            "info": {
+                "id": "3M2rKTckZaQ",
+                "title": "Bonjourr Backgrounds (evening)",
+                "description": null,
+                "total_photos": 124,
+                "user": "Bonjourr · Customisable startpage",
+                "cover_photo": "https://images.unsplash.com/photo-1746166678412-124ca966c8b2?ixlib=rb-4.1.0&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=400&fit=max"
+            },
+            "cached_time": 1749280818.2949731
+        },
+        "user_likes_palacelsis": {
+            "info": {
+                "id": "user_likes_palacelsis",
+                "title": "Xavi Lynx 的 Likes",
+                "description": "来自 @palacelsis 的喜欢照片。None",
+                "total_photos": 121,
+                "user": "Xavi Lynx",
+                "cover_photo": "https://images.unsplash.com/placeholder-avatars/extra-large.jpg?ixlib=rb-4.1.0&crop=faces&fit=crop&w=64&h=64",
+                "username": "palacelsis",
+                "type": "user_likes"
+            },
+            "cached_time": 1749289010.8355277
+        }
+    },
+    "use_user_likes": false
+}

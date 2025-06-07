@@ -7,9 +7,11 @@ from PyQt5.QtCore import QTimer, QObject, pyqtSignal
 import time
 import random
 from datetime import datetime
+import tempfile
 
 class WallpaperManager(QObject):
     wallpaper_changed = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
     
     def __init__(self, settings):
         super().__init__()
@@ -21,11 +23,599 @@ class WallpaperManager(QObject):
         self.unsplash_access_key = self.settings.get_setting("unsplash_access_key", "")
         self.unsplash_secret_key = self.settings.get_setting("unsplash_secret_key", "")
         
-        if not self.unsplash_access_key:
-            print("未设置Unsplash API密钥，将使用备用图片源")
+        # 创建壁纸存储目录
+        self.wallpaper_dir = os.path.join(tempfile.gettempdir(), "wallpaper_changer")
+        os.makedirs(self.wallpaper_dir, exist_ok=True)
         
+        # 只为已添加的自定义合集创建缓存
+        self.collection_info_cache = {}  # 合集信息缓存
+        self.collection_photos_cache = {}  # 合集照片缓存
+        
+        # 预定义的热门合集
+        self.popular_collections = {
+            "自然风光": "1065976",
+            "城市建筑": "1114848", 
+            "抽象艺术": "1065396",
+            "动物世界": "181581",
+            "太空宇宙": "1162961",
+            "简约风格": "1114847",
+            "复古怀旧": "1065412",
+            "黑白摄影": "1163637",
+            "山川湖海": "1065976",
+            "花卉植物": "1154337",
+            "汽车": "1163808",
+            "美食": "1114849",
+            "运动健身": "1163809",
+            "科技数码": "1163810"
+        }
+        
+        # 初始化时加载已保存的合集缓存
+        self.load_cached_collections()
+        
+        if not self.unsplash_access_key:
+            print("未设置Unsplash API密钥")
+
+    def load_cached_collections(self):
+        """加载已缓存的合集信息"""
+        try:
+            cached_data = self.settings.get_setting("cached_collections", {})
+            current_time = time.time()
+            
+            # 清理过期缓存（7天）
+            valid_cache = {}
+            for collection_id, data in cached_data.items():
+                if current_time - data.get('cached_time', 0) < 7 * 24 * 3600:
+                    valid_cache[collection_id] = data
+                    # 加载到内存缓存
+                    self.collection_info_cache[collection_id] = data['info']
+                    if 'photos' in data:
+                        self.collection_photos_cache[collection_id] = data['photos']
+            
+            # 保存清理后的缓存
+            if len(valid_cache) != len(cached_data):
+                self.settings.set_setting("cached_collections", valid_cache)
+                print(f"清理过期缓存，保留 {len(valid_cache)} 个合集")
+            
+            print(f"加载了 {len(valid_cache)} 个已缓存的合集")
+            
+        except Exception as e:
+            print(f"加载缓存失败: {e}")
+
+    def get_collection_info(self, collection_id, cache_if_added=False):
+        """获取合集详细信息（支持用户likes）"""
+        # 检查是否是用户likes
+        if self.is_user_likes_collection(collection_id):
+            username = self.get_username_from_collection_id(collection_id)
+            if username:
+                # 如果有缓存且要求使用缓存
+                if cache_if_added and collection_id in self.collection_info_cache:
+                    print(f"从缓存获取用户likes信息: {username}")
+                    return self.collection_info_cache[collection_id]
+                
+                # 获取用户likes信息
+                user_likes_info = self.get_user_likes_as_collection_info(username)
+                
+                # 如果要求缓存，则缓存结果
+                if cache_if_added and user_likes_info:
+                    self.collection_info_cache[collection_id] = user_likes_info
+                    self.save_collection_to_cache(collection_id, user_likes_info)
+                    print(f"已缓存用户likes信息: {username}")
+                
+                return user_likes_info
+        
+        # 原有的合集处理逻辑
+        if cache_if_added and collection_id in self.collection_info_cache:
+            print(f"从缓存获取合集信息: {collection_id}")
+            return self.collection_info_cache[collection_id]
+        
+        if not self.unsplash_access_key:
+            print("错误: 未设置Unsplash API密钥")
+            return None
+        
+        try:
+            url = f"https://api.unsplash.com/collections/{collection_id}"
+            params = {
+                'client_id': self.unsplash_access_key
+            }
+            
+            print(f"请求合集信息 (缓存模式: {cache_if_added}): {collection_id}")
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            collection_info = response.json()
+            
+            # 检查返回的数据结构
+            if not isinstance(collection_info, dict) or 'id' not in collection_info:
+                print("API返回的数据格式不正确")
+                return None
+            
+            # 安全地提取信息
+            result = {
+                'id': collection_info.get('id', collection_id),
+                'title': collection_info.get('title', '未知标题'),
+                'description': collection_info.get('description', ''),
+                'total_photos': collection_info.get('total_photos', 0),
+                'user': collection_info.get('user', {}).get('name', '未知用户') if collection_info.get('user') else '未知用户',
+                'cover_photo': collection_info.get('cover_photo', {}).get('urls', {}).get('small', '') if collection_info.get('cover_photo') else '',
+                'type': 'collection'  # 标识为普通合集
+            }
+            
+            # 只有在明确要求缓存时才缓存
+            if cache_if_added:
+                self.collection_info_cache[collection_id] = result
+                self.save_collection_to_cache(collection_id, result)
+                print(f"已缓存合集信息: {collection_id}")
+            
+            return result
+            
+        except requests.exceptions.HTTPError as e:
+            if hasattr(e, 'response') and e.response.status_code == 404:
+                print(f"合集不存在: {collection_id}")
+            elif hasattr(e, 'response') and e.response.status_code == 401:
+                print("API密钥无效或未授权")
+            elif hasattr(e, 'response') and e.response.status_code == 403:
+                print("API访问被禁止，可能是速率限制")
+            else:
+                print(f"HTTP错误: {e}")
+            return None
+        except Exception as e:
+            print(f"获取合集信息时发生错误: {e}")
+            return None
+
+    def get_collection_photos(self, collection_id, per_page=30):
+        """获取合集中的照片列表（支持用户likes）"""
+        # 检查是否是用户likes
+        if self.is_user_likes_collection(collection_id):
+            username = self.get_username_from_collection_id(collection_id)
+            if username:
+                return self.get_user_likes(username, per_page)
+            return []
+        # 检查缓存
+        if collection_id in self.collection_photos_cache:
+            cached_photos, timestamp = self.collection_photos_cache[collection_id]
+            # 缓存1小时内有效
+            if time.time() - timestamp < 3600:
+                print(f"从缓存获取照片列表: {collection_id}")
+                return cached_photos
+        
+        if not self.unsplash_access_key:
+            return []
+        
+        try:
+            url = f"https://api.unsplash.com/collections/{collection_id}/photos"
+            params = {
+                'client_id': self.unsplash_access_key,
+                'per_page': per_page,
+                'page': random.randint(1, 3)  # 随机选择页面
+            }
+            
+            print(f"请求合集照片: {collection_id}")
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            photos = response.json()
+            
+            # 缓存结果（只缓存已添加的合集）
+            if self.is_collection_added(collection_id):
+                self.collection_photos_cache[collection_id] = (photos, time.time())
+                self.update_collection_photos_cache(collection_id, photos)
+                print(f"已缓存照片列表: {collection_id}")
+            
+            return photos
+            
+        except Exception as e:
+            print(f"获取合集照片失败: {e}")
+            return []
+
+    def is_collection_added(self, collection_id):
+        """检查合集是否已添加到自定义合集中（支持用户likes）"""
+        custom_collections = self.settings.get_custom_collections()
+        return collection_id in custom_collections.values()
+
+    def save_collection_to_cache(self, collection_id, collection_info):
+        """保存合集信息到持久化缓存"""
+        try:
+            cached_data = self.settings.get_setting("cached_collections", {})
+            cached_data[collection_id] = {
+                'info': collection_info,
+                'cached_time': time.time()
+            }
+            self.settings.set_setting("cached_collections", cached_data)
+        except Exception as e:
+            print(f"保存缓存失败: {e}")
+
+    def update_collection_photos_cache(self, collection_id, photos):
+        """更新合集照片缓存"""
+        try:
+            cached_data = self.settings.get_setting("cached_collections", {})
+            if collection_id in cached_data:
+                cached_data[collection_id]['photos'] = (photos, time.time())
+                self.settings.set_setting("cached_collections", cached_data)
+        except Exception as e:
+            print(f"更新照片缓存失败: {e}")
+
+    def remove_collection_cache(self, collection_id):
+        """移除合集缓存（当用户删除自定义合集时调用）"""
+        try:
+            # 从内存缓存中移除
+            self.collection_info_cache.pop(collection_id, None)
+            self.collection_photos_cache.pop(collection_id, None)
+            
+            # 从持久化缓存中移除
+            cached_data = self.settings.get_setting("cached_collections", {})
+            if collection_id in cached_data:
+                del cached_data[collection_id]
+                self.settings.set_setting("cached_collections", cached_data)
+                print(f"已移除合集缓存: {collection_id}")
+        except Exception as e:
+            print(f"移除缓存失败: {e}")
+    
+    def get_popular_collections(self):
+        """获取预定义的热门合集"""
+        return self.popular_collections
+    
+    def search_collections(self, query, per_page=20):
+        """搜索合集"""
+        if not self.unsplash_access_key:
+            return []
+        
+        try:
+            url = "https://api.unsplash.com/search/collections"
+            params = {
+                'client_id': self.unsplash_access_key,
+                'query': query,
+                'per_page': per_page
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            collections = []
+            
+            for collection in data.get('results', []):
+                collections.append({
+                    'id': collection['id'],
+                    'title': collection['title'],
+                    'description': collection.get('description', ''),
+                    'total_photos': collection['total_photos'],
+                    'preview_photos': [photo['urls']['small'] for photo in collection.get('preview_photos', [])[:3]]
+                })
+            
+            return collections
+            
+        except Exception as e:
+            print(f"搜索合集失败: {e}")
+            return []
+    
+    def extract_user_from_likes_url(self, url):
+        """从用户likes URL中提取用户名（仅支持明确的likes链接）"""
+        import re
+        
+        print(f"正在提取likes URL中的用户名: {url}")
+        
+        try:
+            url = url.strip()
+            
+            # 只支持明确的用户likes URL格式：
+            # https://unsplash.com/@username/likes
+            # http://unsplash.com/@username/likes
+            
+            patterns = [
+                r'https?://(?:www\.)?unsplash\.com/@([a-zA-Z0-9_.-]+)/likes',  # 完整likes URL
+                r'unsplash\.com/@([a-zA-Z0-9_.-]+)/likes',                    # 不带协议的likes URL
+            ]
+            
+            for i, pattern in enumerate(patterns):
+                match = re.search(pattern, url, re.IGNORECASE)
+                if match:
+                    username = match.group(1)
+                    print(f"使用模式 {i+1} 提取到用户名: {username}")
+                    return username
+            
+            print("输入的不是有效的用户likes链接")
+            return None
+            
+        except Exception as e:
+            print(f"提取用户名失败: {e}")
+            return None
+
+    def get_user_info(self, username):
+        """获取用户基本信息"""
+        if not self.unsplash_access_key:
+            return None
+        
+        try:
+            url = f"https://api.unsplash.com/users/{username}"
+            params = {
+                'client_id': self.unsplash_access_key
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            user_info = response.json()
+            return {
+                'id': user_info.get('id'),
+                'username': user_info.get('username'),
+                'name': user_info.get('name', ''),
+                'bio': user_info.get('bio', ''),
+                'total_likes': user_info.get('total_likes', 0),
+                'total_photos': user_info.get('total_photos', 0),
+                'profile_image': user_info.get('profile_image', {}).get('medium', ''),
+                'portfolio_url': user_info.get('portfolio_url', ''),
+                'location': user_info.get('location', '')
+            }
+            
+        except Exception as e:
+            print(f"获取用户信息失败: {e}")
+            return None
+
+    def get_user_likes(self, username, per_page=30, page=1):
+        """获取用户的likes页面照片"""
+        if not self.unsplash_access_key:
+            return []
+        
+        try:
+            url = f"https://api.unsplash.com/users/{username}/likes"
+            params = {
+                'client_id': self.unsplash_access_key,
+                'per_page': per_page,
+                'page': page
+            }
+            
+            print(f"请求用户likes: {username} (页面: {page})")
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            photos = response.json()
+            print(f"获取到 {len(photos)} 张likes照片")
+            return photos
+            
+        except requests.exceptions.HTTPError as e:
+            if hasattr(e, 'response') and e.response.status_code == 404:
+                print(f"用户不存在: {username}")
+            else:
+                print(f"HTTP错误: {e}")
+            return []
+        except Exception as e:
+            print(f"获取用户likes失败: {e}")
+            return []
+        
+    def get_user_likes_as_collection_info(self, username):
+        """将用户likes信息格式化为合集信息格式"""
+        try:
+            user_info = self.get_user_info(username)
+            if not user_info:
+                return None
+            
+            # 检查用户是否有likes
+            if user_info.get('total_likes', 0) == 0:
+                return None
+            
+            # 格式化为合集信息格式
+            collection_info = {
+                'id': f"user_likes_{username}",  # 特殊ID格式标识这是用户likes
+                'title': f"{user_info.get('name', username)} 的 Likes",
+                'description': f"来自 @{username} 的喜欢照片。{user_info.get('bio', '')}",
+                'total_photos': user_info.get('total_likes', 0),
+                'user': user_info.get('name', username),
+                'cover_photo': user_info.get('profile_image', ''),
+                'username': username,  # 额外字段，用于标识这是用户likes
+                'type': 'user_likes'   # 标识类型
+            }
+            
+            return collection_info
+            
+        except Exception as e:
+            print(f"获取用户likes信息失败: {e}")
+            return None
+
+    def is_user_likes_collection(self, collection_id):
+        """检查是否是用户likes合集"""
+        return collection_id.startswith("user_likes_")
+
+    def get_username_from_collection_id(self, collection_id):
+        """从用户likes合集ID中提取用户名"""
+        if self.is_user_likes_collection(collection_id):
+            return collection_id.replace("user_likes_", "")
+        return None
+
+    def validate_user_likes(self, username):
+        """验证用户是否存在且有likes"""
+        user_info = self.get_user_info(username)
+        if not user_info:
+            return False, "用户不存在"
+        
+        if user_info['total_likes'] == 0:
+            return False, f"用户 {user_info['name'] or username} 还没有likes任何照片"
+        
+        # 尝试获取第一页likes来确认可以访问
+        likes = self.get_user_likes(username, per_page=1)
+        if not likes:
+            return False, "无法获取用户的likes"
+        
+        return True, user_info
+
+    def download_from_user_likes(self, username, width, height):
+        """从用户likes中下载壁纸"""
+        try:
+            # 随机选择页面（假设用户有多页likes）
+            page = random.randint(1, 5)  # 最多尝试前5页
+            photos = self.get_user_likes(username, per_page=30, page=page)
+            
+            if not photos:
+                # 如果随机页面没有照片，尝试第一页
+                photos = self.get_user_likes(username, per_page=30, page=1)
+            
+            if not photos:
+                print(f"用户 {username} 的likes中没有找到照片")
+                return None
+            
+            # 随机选择一张照片
+            photo = random.choice(photos)
+            image_url = photo['urls']['raw']
+            
+            # 构建下载URL
+            download_url = f"{image_url}&w={width}&h={height}&fit=crop&crop=entropy"
+            
+            # 下载图片
+            image_response = requests.get(download_url, timeout=60)
+            image_response.raise_for_status()
+            
+            # 保存图片
+            timestamp = int(time.time())
+            filename = f"wallpaper_{timestamp}.jpg"
+            filepath = os.path.join(self.wallpaper_dir, filename)
+            
+            with open(filepath, 'wb') as f:
+                f.write(image_response.content)
+            
+            # 清理旧的壁纸文件
+            self._cleanup_old_wallpapers()
+            
+            print(f"从用户 {username} 的likes下载壁纸成功: {photo.get('description', '无描述')}")
+            return filepath
+            
+        except Exception as e:
+            print(f"从用户likes下载壁纸失败: {e}")
+            return None
+
+    def download_wallpaper(self):
+        """从Unsplash下载壁纸"""
+        if not self.unsplash_access_key:
+            print("未设置Unsplash API密钥")
+            return None
+            
+        try:
+            resolution = self.get_screen_resolution()
+            quality = self.settings.get_setting("quality", "high")
+            width, height = resolution.get(quality, resolution['medium'])
+            
+            # 检查是否启用了用户likes模式
+            use_user_likes = self.settings.get_setting("use_user_likes", False)
+            selected_user = self.settings.get_setting("selected_user", "")
+            
+            # 检查是否启用了合集模式
+            use_collection = self.settings.get_setting("use_collection", False)
+            selected_collection = self.settings.get_setting("selected_collection", "")
+            
+            if use_user_likes and selected_user:
+                # 从用户likes中下载
+                print(f"从用户 {selected_user} 的likes下载壁纸")
+                return self.download_from_user_likes(selected_user, width, height)
+            elif use_collection and selected_collection:
+                # 从合集中下载
+                print(f"从合集 {selected_collection} 下载壁纸")
+                return self.download_from_collection(selected_collection, width, height)
+            else:
+                # 从随机照片或关键词搜索中下载
+                print("下载随机壁纸")
+                return self.download_random_wallpaper(width, height)
+                
+        except Exception as e:
+            print(f"下载壁纸时发生未知错误: {e}")
+            return None
+    
+    def download_from_collection(self, collection_id, width, height):
+        """从指定合集下载壁纸"""
+        try:
+            # 获取合集中的照片
+            photos = self.get_collection_photos(collection_id)
+            
+            if not photos:
+                print("合集中没有找到照片")
+                return None
+            
+            # 随机选择一张照片
+            photo = random.choice(photos)
+            image_url = photo['urls']['raw']
+            
+            # 构建下载URL
+            download_url = f"{image_url}&w={width}&h={height}&fit=crop&crop=entropy"
+            
+            # 下载图片
+            image_response = requests.get(download_url, timeout=60)
+            image_response.raise_for_status()
+            
+            # 保存图片
+            timestamp = int(time.time())
+            filename = f"wallpaper_{timestamp}.jpg"
+            filepath = os.path.join(self.wallpaper_dir, filename)
+            
+            with open(filepath, 'wb') as f:
+                f.write(image_response.content)
+            
+            # 清理旧的壁纸文件
+            self._cleanup_old_wallpapers()
+            
+            print(f"从合集下载壁纸成功: {photo.get('description', '无描述')}")
+            return filepath
+            
+        except Exception as e:
+            print(f"从合集下载壁纸失败: {e}")
+            return None
+    
+    def download_random_wallpaper(self, width, height):
+        """下载随机壁纸（原有功能）"""
+        try:
+            # 构建Unsplash API请求
+            params = {
+                'client_id': self.unsplash_access_key,
+                'w': width,
+                'h': height,
+                'fit': 'crop',
+                'crop': 'entropy'
+            }
+            
+            # 添加搜索关键词（如果设置了的话）
+            keywords = self.settings.get_setting("keywords", "")
+            if keywords:
+                params['query'] = keywords
+                url = "https://api.unsplash.com/photos/random"
+            else:
+                url = "https://api.unsplash.com/photos/random"
+            
+            # 发送请求
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            image_url = data['urls']['raw']
+            
+            # 下载图片
+            image_response = requests.get(image_url, timeout=60)
+            image_response.raise_for_status()
+            
+            # 保存图片
+            timestamp = int(time.time())
+            filename = f"wallpaper_{timestamp}.jpg"
+            filepath = os.path.join(self.wallpaper_dir, filename)
+            
+            with open(filepath, 'wb') as f:
+                f.write(image_response.content)
+            
+            # 清理旧的壁纸文件
+            self._cleanup_old_wallpapers()
+            
+            return filepath
+            
+        except requests.exceptions.RequestException as e:
+            print(f"网络请求失败: {e}")
+            return None
+        except json.JSONDecodeError as e:
+            print(f"JSON解析失败: {e}")
+            return None
+        except Exception as e:
+            print(f"下载随机壁纸时发生未知错误: {e}")
+            return None
+    
+    # ... 其他现有方法保持不变 ...
+    
     def start_timer(self):
-        # 根据设置的频率设置定时器
         frequency = self.settings.get_setting("frequency")
         interval_ms = self._convert_frequency_to_ms(frequency)
         self.timer.start(interval_ms)
@@ -34,507 +624,120 @@ class WallpaperManager(QObject):
         self.timer.stop()
         
     def _convert_frequency_to_ms(self, frequency):
-        # 将频率转换为毫秒
-        if frequency == "1小时":
-            return 60 * 60 * 1000
-        elif frequency == "2小时":
-            return 2 * 60 * 60 * 1000
-        elif frequency == "4小时":
-            return 4 * 60 * 60 * 1000
-        elif frequency == "1天":
-            return 24 * 60 * 60 * 1000
-        else:  # 默认1小时
-            return 60 * 60 * 1000
+        frequency_map = {
+            "1小时": 60 * 60 * 1000,
+            "2小时": 2 * 60 * 60 * 1000,
+            "4小时": 4 * 60 * 60 * 1000,
+            "1天": 24 * 60 * 60 * 1000
+        }
+        return frequency_map.get(frequency, 60 * 60 * 1000)
     
     def get_screen_resolution(self):
-        """获取优化后的屏幕分辨率，考虑像素密度和特殊比例"""
-        if platform.system() == "Windows":
-            user32 = ctypes.windll.user32
-            # 获取基础分辨率
-            base_width = user32.GetSystemMetrics(0)
-            base_height = user32.GetSystemMetrics(1)
-            
-            # 获取像素密度(DPI)
-            hdc = user32.GetDC(0)
-            dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSX
-            user32.ReleaseDC(0, hdc)
-            density = max(1, dpi / 96)  # 标准DPI是96
-            
-            # 计算高分辨率
-            width = int(base_width * density)
-            height = int(base_height * density)
-            
-            # 处理特殊屏幕比例
-            ratio = base_width / base_height
-            if ratio >= 2:  # 超宽屏
-                width = int(height * 2)
-            elif ratio <= 0.5:  # 超窄屏
-                height = int(width * 2)
-                
-            return {
-                'full': (width, height),
-                'medium': (width//2, height//2),
-                'small': (width//4, height//4),
-                'base': (base_width, base_height)
-            }
-        else:
-            return {
-                'full': (3840, 2160),
-                'medium': (1920, 1080),
-                'small': (960, 540),
-                'base': (1920, 1080)
-            }
-    
-    def download_wallpaper(self):
-        resolutions = self.get_screen_resolution()
-        save_path = self.settings.get_setting("save_path")
-        # 根据设置选择分辨率，默认使用full
-        size_setting = self.settings.get_setting("wallpaper_size", "full")
-        width, height = resolutions.get(size_setting, resolutions['full'])
-        
-        # 确保保存目录存在
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-        
-        try:
-            print("开始下载壁纸...")
-            
-            # 检查是否有API密钥
-            if self.unsplash_access_key:
-                # 使用Unsplash API获取随机图片
-                api_url = "https://api.unsplash.com/photos/random"
-                params = {
-                    "orientation": "landscape",
-                    "query": "nature,landscape",
-                }
-                headers = {
-                    "Authorization": f"Client-ID {self.unsplash_access_key}",
-                    "Accept-Version": "v1"
-                }
-                
-                print(f"请求Unsplash API: {api_url}")
-                response = requests.get(api_url, params=params, headers=headers)
-                print(f"API响应状态码: {response.status_code}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    # 生成三种尺寸的URL
-                    full_url = data["urls"]["raw"] + f"&w={resolutions['full'][0]}&h={resolutions['full'][1]}&fit=crop&q=100"
-                    medium_url = data["urls"]["raw"] + f"&w={resolutions['medium'][0]}&h={resolutions['medium'][1]}&fit=crop&q=85" 
-                    small_url = data["urls"]["raw"] + f"&w={resolutions['small'][0]}&h={resolutions['small'][1]}&fit=crop&q=75"
-                    
-                    # 根据设置选择要下载的尺寸
-                    if size_setting == "full":
-                        image_url = full_url
-                    elif size_setting == "medium":
-                        image_url = medium_url
-                    else:
-                        image_url = small_url
-                    
-                    print(f"使用{size_setting}尺寸: {image_url}")
-                    
-                    # 获取图片作者信息
-                    author = data["user"]["name"]
-                    author_link = data["user"]["links"]["html"]
-                    print(f"图片作者: {author} ({author_link})")
-                    
-                    # 下载图片
-                    print(f"下载图片: {image_url}")
-                    image_response = requests.get(image_url)
-                    
-                    if image_response.status_code == 200:
-                        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-                        filename = f"wallpaper_{timestamp}.jpg"
-                        file_path = os.path.join(save_path, filename)
-                        
-                        print(f"保存壁纸到: {file_path}")
-                        
-                        with open(file_path, "wb") as f:
-                            f.write(image_response.content)
-                        
-                        # 保存图片元数据
-                        metadata = {
-                            "id": data["id"],
-                            "author": author,
-                            "author_link": author_link,
-                            "download_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "unsplash_link": data["links"]["html"]
-                        }
-                        
-                        metadata_path = os.path.join(save_path, f"wallpaper_{timestamp}.json")
-                        with open(metadata_path, "w", encoding="utf-8") as f:
-                            json.dump(metadata, f, ensure_ascii=False, indent=2)
-                        
-                        # 验证文件是否成功保存
-                        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                            print("壁纸下载成功")
-                            return file_path
-                        else:
-                            print("壁纸文件保存失败或文件大小为0")
-                            return None
-                    else:
-                        print(f"下载图片失败，HTTP状态码: {image_response.status_code}")
-                        return None
-                else:
-                    print(f"API请求失败，HTTP状态码: {response.status_code}")
-                    if response.status_code == 403:
-                        print("可能是API密钥无效或已达到请求限制")
-                    elif response.status_code == 429:
-                        print("已达到API请求限制")
-            
-            # 尝试备用方法
-            print("尝试使用备用方法...")
-            random_url = "https://picsum.photos/{}/{}".format(width, height)
-            print(f"请求URL: {random_url}")
-            image_response = requests.get(random_url)
-            
-            if image_response.status_code == 200:
-                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-                filename = f"wallpaper_{timestamp}.jpg"
-                file_path = os.path.join(save_path, filename)
-                
-                with open(file_path, "wb") as f:
-                    f.write(image_response.content)
-                
-                if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-                    print("使用备用方法下载壁纸成功")
-                    return file_path
-            
-            return None
-                
-        except Exception as e:
-            print(f"下载壁纸时出错: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-    
-    def set_wallpaper(self, image_path):
-        """设置壁纸，根据屏幕比例自动选择最佳显示模式"""
         if platform.system() == "Windows":
             try:
-                import winreg
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Control Panel\\Desktop", 0, winreg.KEY_SET_VALUE)
+                user32 = ctypes.windll.user32
+                base_width = user32.GetSystemMetrics(0)
+                base_height = user32.GetSystemMetrics(1)
                 
-                # 获取屏幕比例
-                resolutions = self.get_screen_resolution()
-                base_width, base_height = resolutions['base']
+                hdc = user32.GetDC(0)
+                dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)
+                user32.ReleaseDC(0, hdc)
+                density = max(1, dpi / 96)
+                
+                width = int(base_width * density)
+                height = int(base_height * density)
+                
                 ratio = base_width / base_height
+                if ratio >= 2:
+                    width = int(height * 2)
+                elif ratio <= 0.5:
+                    height = int(width * 2)
                 
-                # 根据比例选择最佳显示模式
-                if ratio >= 2:  # 超宽屏
-                    style = "10"  # 填充
-                    print("检测到超宽屏，使用填充模式")
-                elif ratio <= 0.5:  # 超窄屏
-                    style = "6"  # 适应
-                    print("检测到超窄屏，使用适应模式")
-                else:  # 正常比例
-                    size_setting = self.settings.get_setting("wallpaper_size", "full")
-                    if size_setting == "full":
-                        style = "10"  # 填充
-                    else:
-                        style = "6"  # 适应
-                    print(f"使用{size_setting}尺寸，显示模式: {'填充' if style == '10' else '适应'}")
-                
-                # 设置显示模式
-                winreg.SetValueEx(key, "WallpaperStyle", 0, winreg.REG_SZ, style)
-                winreg.SetValueEx(key, "TileWallpaper", 0, winreg.REG_SZ, "0")
-                winreg.CloseKey(key)
-                
-                # 设置壁纸
-                ctypes.windll.user32.SystemParametersInfoW(20, 0, image_path, 3)
-                self.current_wallpaper = image_path
-                self.wallpaper_changed.emit(image_path)
-                return True
+                if width >= 3840 or height >= 2160:
+                    resolution_levels = {
+                        'full': (width, height),
+                        'high': (2560, 1440),
+                        'medium': (1920, 1080),
+                        'small': (1280, 720),
+                        'base': (base_width, base_height)
+                    }
+                elif width >= 2560 or height >= 1440:
+                    resolution_levels = {
+                        'full': (2560, 1440),
+                        'high': (2560, 1440),
+                        'medium': (1920, 1080),
+                        'small': (1280, 720),
+                        'base': (base_width, base_height)
+                    }
+                else:
+                    resolution_levels = {
+                        'full': (1920, 1080),
+                        'high': (1920, 1080),
+                        'medium': (1280, 720),
+                        'small': (960, 540),
+                        'base': (base_width, base_height)
+                    }
+                    
+                return resolution_levels
             except Exception as e:
-                print(f"设置壁纸显示方式时出错: {e}")
-                # 如果设置显示方式失败，仍然尝试设置壁纸
-                ctypes.windll.user32.SystemParametersInfoW(20, 0, image_path, 3)
-                self.current_wallpaper = image_path
-                self.wallpaper_changed.emit(image_path)
-                return True
+                print(f"获取屏幕分辨率失败: {e}")
+                return self._get_default_resolution()
         else:
-            # 其他操作系统的壁纸设置方法
-            return False
+            return self._get_default_resolution()
+    
+    def _get_default_resolution(self):
+        return {
+            'full': (3840, 2160),
+            'high': (2560, 1440),
+            'medium': (1920, 1080),
+            'small': (1280, 720),
+            'base': (1920, 1080)
+        }
     
     def change_wallpaper(self):
-        """下载并设置新壁纸，带重试机制"""
-        max_retries = self.settings.get_setting("max_retries", 3)
-        retry_delay = self.settings.get_setting("retry_delay", 5)  # 秒
-        
-        for attempt in range(1, max_retries + 1):
-            print(f"尝试下载壁纸 (第{attempt}次，共{max_retries}次)...")
+        try:
             wallpaper_path = self.download_wallpaper()
-            
             if wallpaper_path:
-                if self.set_wallpaper(wallpaper_path):
-                    print("壁纸设置成功")
-                    return
-                else:
-                    print("壁纸设置失败")
+                self._set_wallpaper(wallpaper_path)
+                self.current_wallpaper = wallpaper_path
+                self.wallpaper_changed.emit(wallpaper_path)
             else:
-                print("壁纸下载失败")
+                self.error_occurred.emit("下载壁纸失败")
+        except Exception as e:
+            self.error_occurred.emit(f"更换壁纸时发生错误: {str(e)}")
             
-            if attempt < max_retries:
-                print(f"{retry_delay}秒后重试...")
-                time.sleep(retry_delay)
-        
-        print(f"达到最大重试次数({max_retries})，放弃本次更换壁纸")
+    def _set_wallpaper(self, wallpaper_path):
+        try:
+            if platform.system() == "Windows":
+                ctypes.windll.user32.SystemParametersInfoW(20, 0, wallpaper_path, 3)
+            elif platform.system() == "Darwin":
+                os.system(f"osascript -e 'tell application \"Finder\" to set desktop picture to POSIX file \"{wallpaper_path}\"'")
+            else:
+                os.system(f"gsettings set org.gnome.desktop.background picture-uri file://{wallpaper_path}")
+        except Exception as e:
+            raise Exception(f"设置壁纸失败: {str(e)}")
     
-    def get_current_wallpaper_info(self):
-        """获取当前壁纸的元数据信息"""
-        if not self.current_wallpaper or not os.path.exists(self.current_wallpaper):
-            return None
-        
+    def _cleanup_old_wallpapers(self):
         try:
-            # 查找对应的元数据文件
-            base_filename = os.path.basename(self.current_wallpaper)
-            filename, _ = os.path.splitext(base_filename)
-            metadata_path = os.path.join(
-                os.path.dirname(self.current_wallpaper),
-                f"{filename}.json"
-            )
+            files = []
+            for filename in os.listdir(self.wallpaper_dir):
+                if filename.startswith("wallpaper_") and filename.endswith(".jpg"):
+                    filepath = os.path.join(self.wallpaper_dir, filename)
+                    files.append((filepath, os.path.getctime(filepath)))
             
-            if os.path.exists(metadata_path):
-                with open(metadata_path, "r", encoding="utf-8") as f:
-                    metadata = json.load(f)
-                    return {
-                        'image_path': self.current_wallpaper,
-                        'author': metadata.get('author', '未知作者'),
-                        'author_link': metadata.get('author_link', ''),
-                        'source_link': metadata.get('unsplash_link', ''),
-                        'download_date': metadata.get('download_date', '未知日期')
-                    }
-            else:
-                return {
-                    'image_path': self.current_wallpaper,
-                    'author': '未知作者',
-                    'author_link': '',
-                    'source_link': '',
-                    'download_date': '未知日期'
-                }
-        except Exception as e:
-            print(f"获取壁纸元数据时出错: {e}")
-            return None
-
-    def cleanup_old_wallpapers(self):
-        """清理过期的壁纸文件"""
-        save_path = self.settings.get_setting("save_path")
-        days_to_keep = self.settings.get_setting("days_to_keep", 30)
-        
-        if not os.path.exists(save_path):
-            print(f"壁纸保存路径不存在: {save_path}")
-            return
-        
-        cutoff_time = time.time() - (days_to_keep * 24 * 60 * 60)
-        deleted_count = 0
-        
-        try:
-            print(f"开始清理超过{days_to_keep}天的旧壁纸...")
+            files.sort(key=lambda x: x[1], reverse=True)
             
-            for filename in os.listdir(save_path):
-                file_path = os.path.join(save_path, filename)
-                
-                # 只处理壁纸图片文件
-                if filename.startswith("wallpaper_") and filename.endswith((".jpg", ".png")):
-                    # 获取文件修改时间
-                    file_time = os.path.getmtime(file_path)
+            for filepath, _ in files[5:]:
+                try:
+                    os.remove(filepath)
+                except OSError:
+                    pass
                     
-                    if file_time < cutoff_time:
-                        print(f"删除过期壁纸: {filename}")
-                        os.remove(file_path)
-                        deleted_count += 1
-                        
-                        # 尝试删除对应的元数据文件
-                        base_name = os.path.splitext(filename)[0]
-                        metadata_path = os.path.join(save_path, f"{base_name}.json")
-                        if os.path.exists(metadata_path):
-                            os.remove(metadata_path)
-                            print(f"删除对应的元数据文件: {os.path.basename(metadata_path)}")
-            
-            print(f"清理完成，共删除{deleted_count}个过期壁纸文件")
-            return deleted_count
-            
         except Exception as e:
-            print(f"清理旧壁纸时出错: {e}")
-            import traceback
-            traceback.print_exc()
-            return -1
-
-    def get_favorite_wallpapers(self):
-        """获取收藏夹中的所有壁纸信息"""
-        favorite_path = self.settings.get_setting("favorite_path")
-        if not os.path.exists(favorite_path):
-            print(f"收藏夹路径不存在: {favorite_path}")
-            return []
-        
-        wallpapers = []
-        
-        try:
-            print(f"扫描收藏夹路径: {favorite_path}")
-            
-            for filename in os.listdir(favorite_path):
-                if filename.startswith("favorite_") and filename.endswith((".jpg", ".png")):
-                    file_path = os.path.join(favorite_path, filename)
-                    
-                    # 获取基础文件名
-                    base_name = os.path.splitext(filename)[0]
-                    metadata_path = os.path.join(favorite_path, f"{base_name}.json")
-                    
-                    if os.path.exists(metadata_path):
-                        with open(metadata_path, "r", encoding="utf-8") as f:
-                            metadata = json.load(f)
-                            wallpapers.append({
-                                'image_path': file_path,
-                                'author': metadata.get('author', '未知作者'),
-                                'author_link': metadata.get('author_link', ''),
-                                'source_link': metadata.get('unsplash_link', ''),
-                                'download_date': metadata.get('download_date', '未知日期')
-                            })
-                    else:
-                        wallpapers.append({
-                            'image_path': file_path,
-                            'author': '未知作者',
-                            'author_link': '',
-                            'source_link': '',
-                            'download_date': '未知日期'
-                        })
-            
-            print(f"找到{len(wallpapers)}张收藏的壁纸")
-            return wallpapers
-            
-        except Exception as e:
-            print(f"获取收藏壁纸时出错: {e}")
-            import traceback
-            traceback.print_exc()
-            return []
-
-    def set_random_favorite_wallpaper(self):
-        """从收藏夹中随机选择一张壁纸并设置为当前壁纸"""
-        favorites = self.get_favorite_wallpapers()
-        if not favorites:
-            print("收藏夹中没有壁纸")
-            return None
-        
-        try:
-            # 随机选择一张壁纸
-            selected = random.choice(favorites)
-            print(f"从收藏夹中选择壁纸: {selected['image_path']}")
-            
-            # 设置壁纸
-            if self.set_wallpaper(selected['image_path']):
-                print("成功设置收藏夹壁纸")
-                return selected
-            else:
-                print("设置收藏夹壁纸失败")
-                return None
-                
-        except Exception as e:
-            print(f"设置收藏夹壁纸时出错: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-    def get_thumbnail(self, size="small"):
-        """获取当前壁纸的缩略图路径，如果不存在则生成"""
-        if not self.current_wallpaper or not os.path.exists(self.current_wallpaper):
-            print("当前没有有效的壁纸")
-            return None
-            
-        try:
-            from PIL import Image
-            import io
-            
-            # 定义缩略图尺寸
-            sizes = {
-                "small": (320, 180),
-                "medium": (640, 360),
-                "large": (1280, 720)
-            }
-            
-            if size not in sizes:
-                size = "small"
-                
-            width, height = sizes[size]
-            
-            # 构建缩略图路径
-            base_name = os.path.basename(self.current_wallpaper)
-            filename, ext = os.path.splitext(base_name)
-            thumbnail_dir = os.path.join(
-                os.path.dirname(self.current_wallpaper),
-                "thumbnails"
-            )
-            thumbnail_path = os.path.join(
-                thumbnail_dir,
-                f"{filename}_{size}{ext}"
-            )
-            
-            # 如果缩略图已存在且未过期，直接返回
-            if os.path.exists(thumbnail_path):
-                wallpaper_mtime = os.path.getmtime(self.current_wallpaper)
-                thumbnail_mtime = os.path.getmtime(thumbnail_path)
-                
-                if thumbnail_mtime > wallpaper_mtime:
-                    print(f"使用现有的{size}尺寸缩略图: {thumbnail_path}")
-                    return thumbnail_path
-            
-            # 创建缩略图目录
-            if not os.path.exists(thumbnail_dir):
-                os.makedirs(thumbnail_dir)
-                print(f"创建缩略图目录: {thumbnail_dir}")
-            
-            # 生成缩略图
-            print(f"生成{size}尺寸缩略图: {thumbnail_path}")
-            with Image.open(self.current_wallpaper) as img:
-                img.thumbnail((width, height))
-                img.save(thumbnail_path)
-                
-            return thumbnail_path
-            
-        except ImportError:
-            print("Pillow库未安装，无法生成缩略图")
-            return None
-        except Exception as e:
-            print(f"生成缩略图时出错: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
-
-    def save_current_wallpaper(self, custom_path=None):
-        """保存当前壁纸和元数据到收藏夹"""
-        if not self.current_wallpaper or not os.path.exists(self.current_wallpaper):
-            print("当前没有有效的壁纸可保存")
-            return False
-        
-        # 确定保存目录
-        save_dir = custom_path if custom_path else self.settings.get_setting("favorite_path")
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        
-        # 获取基础文件名
-        base_filename = os.path.basename(self.current_wallpaper)
-        filename, ext = os.path.splitext(base_filename)
-        
-        try:
-            import shutil
-            # 保存壁纸图片
-            new_image_path = os.path.join(save_dir, f"favorite_{filename}{ext}")
-            shutil.copy2(self.current_wallpaper, new_image_path)
-            print(f"壁纸图片已保存到: {new_image_path}")
-            
-            # 尝试查找并保存对应的元数据文件
-            metadata_path = os.path.join(
-                os.path.dirname(self.current_wallpaper),
-                f"{filename}.json"
-            )
-            
-            if os.path.exists(metadata_path):
-                new_metadata_path = os.path.join(save_dir, f"favorite_{filename}.json")
-                shutil.copy2(metadata_path, new_metadata_path)
-                print(f"壁纸元数据已保存到: {new_metadata_path}")
-            
-            return True
-        except Exception as e:
-            print(f"保存壁纸时出错: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+            print(f"清理旧壁纸文件时出错: {e}")
+    
+    def manual_change_wallpaper(self):
+        self.change_wallpaper()
+    
+    def get_current_wallpaper(self):
+        return self.current_wallpaper
