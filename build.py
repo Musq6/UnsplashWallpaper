@@ -18,9 +18,9 @@ if not os.path.exists(png_icon_path):
         [(50, 50), (206, 206)], outline=(0, 120, 215), fill=(240, 240, 240), width=10
     )
     img.save(png_icon_path)
-    print(f"创建了默认PNG图标: {png_icon_path}")
+    print(f"Created default PNG icon: {png_icon_path}")
 
-# 将PNG转换为ICO格式
+# 将PNG转换为ICO格式（PyInstaller在Windows上需要ICO格式）
 if os.path.exists(png_icon_path) and not os.path.exists(ico_icon_path):
     try:
         from PIL import Image
@@ -32,9 +32,9 @@ if os.path.exists(png_icon_path) and not os.path.exists(ico_icon_path):
             format="ICO",
             sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
         )
-        print(f"转换PNG为ICO: {ico_icon_path}")
+        print(f"Converted PNG to ICO: {ico_icon_path}")
     except Exception as e:
-        print(f"转换图标格式失败: {e}")
+        print(f"Failed to convert icon format: {e}")
         ico_icon_path = png_icon_path  # 回退到PNG
 
 # 配置PyInstaller参数
@@ -49,12 +49,12 @@ pyinstaller_args = [
 # 添加图标参数
 if os.path.exists(ico_icon_path):
     pyinstaller_args.append(f"--icon={ico_icon_path}")
-    print(f"使用图标文件: {ico_icon_path}")
+    print(f"Using icon file: {ico_icon_path}")
 elif os.path.exists(png_icon_path):
     pyinstaller_args.append(f"--icon={png_icon_path}")
-    print(f"使用图标文件: {png_icon_path}")
+    print(f"Using icon file: {png_icon_path}")
 else:
-    print("警告: 没有找到图标文件")
+    print("Warning: No icon file found")
 
 # 添加数据文件（确保图标文件被包含到打包中）
 if os.path.exists(ico_icon_path):
@@ -62,9 +62,9 @@ if os.path.exists(ico_icon_path):
 if os.path.exists(png_icon_path):
     pyinstaller_args.append(f"--add-data={png_icon_path};.")
 
-print("PyInstaller参数:", pyinstaller_args)
+print("PyInstaller arguments:", pyinstaller_args)
 
 # 运行PyInstaller
 PyInstaller.__main__.run(pyinstaller_args)
 
-print("Done check DIR dist")
+print("Build completed, check dist directory")
