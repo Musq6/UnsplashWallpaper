@@ -2,13 +2,15 @@
 
 ## 主要功能
 
-- 自动读取屏幕分辨率
-- 切换/保存壁纸 并可以设置自动切换时间
-- 自定义保存位置
-- 开机自动启动
+- 随机设置壁纸
+- 使用壁纸合集
+- 定时自动切换
+- 收藏
+  
  ## it looks like
+![image](https://github.com/user-attachments/assets/78fc5dc2-5c06-4213-914a-d282b8277755)
 
- ![image](https://github.com/user-attachments/assets/48fb8e17-d80d-448f-a524-813fb42b1077)
+
 
 ## 须知
 
