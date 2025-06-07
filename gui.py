@@ -594,9 +594,6 @@ class MainWindow(QMainWindow):
                 <p style="margin: 0 0 8px 0; font-size: 11px; color: #bdc3c7;">
                     从Unsplash随机获取高质量壁纸
                 </p>
-                <p style="margin: 0; font-size: 11px; color: #bdc3c7;">
-                    🎨 每次更换都是惊喜
-                </p>
             </div>
             """
 
@@ -1413,11 +1410,6 @@ class MainWindow(QMainWindow):
             # 清理URL，移除多余的空格和换行
             url = url.strip()
 
-            # 支持的URL格式：
-            # 新格式：https://unsplash.com/collections/3M2rKTckZaQ/bonjourr-backgrounds-(evening)
-            # 旧格式：https://unsplash.com/collections/1065976/nature
-            # 用户合集：https://unsplash.com/@username/collections/3M2rKTckZaQ
-
             # 更新的正则表达式模式，支持字母数字混合ID
             patterns = [
                 # 新格式：字母数字混合ID（11位左右）
@@ -1537,12 +1529,12 @@ class MainWindow(QMainWindow):
                 else:
                     desc_text = "暂无描述"
 
-                # 创建更简洁美观的预览文本
+                # 更简洁美观的预览文本
                 title = collection_info.get("title", "未知标题")
                 user = collection_info.get("user", "未知用户")
                 total_photos = collection_info.get("total_photos", 0)
 
-                # 使用HTML格式化文本，提供更好的排版控制
+                # 使用HTML格式化文本
                 preview_html = f"""
                 <div style="font-family: 'Microsoft YaHei', 'SimHei', Arial, sans-serif;">
                     <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: bold; color: #2c3e50;">
