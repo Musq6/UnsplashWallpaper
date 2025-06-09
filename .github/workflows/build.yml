@@ -1,0 +1,50 @@
+name: Build 
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install --no-cache-dir pyinstaller PyQt5 pillow requests
+
+      - name: Run PyInstaller via build.py
+        run: |
+          python build.py  
+
+      - name: Rename Windows output
+        run: |
+          Move-Item -Path "dist/UnsplashWallpaper.exe" -Destination "dist/UnsplashWallpaper-windows.exe"
+          
+      - name: Check dist directory
+        run: |
+          dir dist
+
+      # 添加这个步骤来上传 artifact（无论是否有标签都会执行）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnsplashWallpaper-windows
+          path: dist/UnsplashWallpaper-windows.exe
+
+      # 只有在推送标签时才创建 GitHub Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/UnsplashWallpaper-windows.exe

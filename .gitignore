@@ -1,0 +1,8 @@
+__pycache__/wallpaper_manager.cpython-37.pyc
+__pycache__/settings.cpython-37.pyc
+__pycache__/gui.cpython-37.pyc
+dist/
+build/
+*UnsplashWallpaper*
+*.ico
+config.json
